@@ -1,7 +1,7 @@
 
 # "d" to spawn another dolphin
 # "r" to clear canvas & restart the whole thing
-
+# "s" to spawn more sardine
 
 
 mode = 'all'
@@ -26,6 +26,7 @@ surfaceY = 0.0
 surfaceB = 8.0
 
 dolphins = []
+
 
 sardine_threat_radius = 140.0
 
@@ -281,6 +282,8 @@ def draw():
             if dist < nearestDist:
                 nearestDist = dist
         # escape force
+        
+        
         if nearestDist < sardine_threat_radius:
             # find the nearest dolphin again to push directly away
             for d in dolphins:
@@ -292,7 +295,8 @@ def draw():
                         away.mult(s * sardine_escape_force)
                         b.apply_force(away)
                     break
-            # shock speed boost inverse with distance
+                
+            # shock speed boost
             shock = 1.0 - constrain(nearestDist / sardine_threat_radius, 0, 1)
             b.temp_max_speed = lerp(max_speed, max_speed * sardine_escape_speed_mult_max, shock)
         else:
