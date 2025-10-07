@@ -1,8 +1,7 @@
 
-# "d" to spawn another dolphin
-# "r" to clear canvas & restart the whole thing
-# "s" to spawn more sardine
-
+# "d" to spawn more dolphins
+# "r" to restart the whole thing entirely 
+# "s" to spawn another group of sartine
 
 mode = 'all'
 show_info = True
@@ -22,8 +21,8 @@ flock = []
 flow_strength = 0.008
 flow_center = None
 
-surfaceY = 0.0
-surfaceB = 8.0
+surfaceY = 0
+surfaceB = 8
 
 dolphins = []
 
@@ -136,7 +135,6 @@ class Boid(object):
             steer.add(sep); steer.add(ali); steer.add(coh)
         self.apply_force(steer)
         
-        
     def rule_cohesion(self, others):
         center = PVector(0,0)
         count = 0
@@ -149,7 +147,6 @@ class Boid(object):
             center.div(count)
             return self.steer_to(center)
         return PVector(0,0)
-
 
     def wrap_edges(self):
         if self.pos.y < surfaceY:
@@ -225,13 +222,11 @@ def add_dolphin():
 
 def setup():
     
-    size(displayWidth, displayHeight)
-    
+    size(1500, 860)
     frameRate(60)
     
     global flow_center
-    flow_center = PVector(random(width), random(height))
-
+    flow_center = PVector(width*0.5, height*0.55)
     
     global surfaceY
     surfaceY = height * 0.1
@@ -281,10 +276,11 @@ def draw():
             dist = b.pos.dist(d.pos)
             if dist < nearestDist:
                 nearestDist = dist
+                
+                
         # escape force
-        
-        
         if nearestDist < sardine_threat_radius:
+            
             # find the nearest dolphin again to push directly away
             for d in dolphins:
                 if b.pos.dist(d.pos) == nearestDist:
@@ -295,6 +291,7 @@ def draw():
                         away.mult(s * sardine_escape_force)
                         b.apply_force(away)
                     break
+                
                 
             # shock speed boost
             shock = 1.0 - constrain(nearestDist / sardine_threat_radius, 0, 1)
@@ -326,13 +323,11 @@ def draw():
 
 def reset_state():
     global flow_center, surfaceY, flock, dolphins
-    
     flow_center = PVector(random(width), random(height))
-    
     surfaceY = height * 0.1
 
-    flock = []
-    dolphins = []
+    flock= []
+    dolphins= []
 
     add_boids(30)
     for _ in range(2):
@@ -344,7 +339,6 @@ def keyPressed():
     global show_radius
     global mode, show_info, running
     global view_radius, max_speed, max_force
-    
     global restart
     
     if key in ('s', 'S'):
