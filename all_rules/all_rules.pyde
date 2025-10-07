@@ -222,7 +222,7 @@ def add_dolphin():
 
 def setup():
     
-    size(1500, 860)
+    size(1920, 1080)
     frameRate(60)
     
     global flow_center
