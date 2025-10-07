@@ -1,3 +1,9 @@
+
+# "d" to spawn another dolphin
+# "r" to clear canvas & restart the whole thing
+
+
+
 mode = 'all'
 show_info = True
 running = True
@@ -13,23 +19,53 @@ weight_coh = 1.0
 
 flock = []
 
+flow_strength = 0.008
+flow_center = None
+
+surfaceY = 0.0
+surfaceB = 8.0
+
+dolphins = []
+
+sardine_threat_radius = 140.0
+
+sardine_escape_force = 0.10
+sardine_escape_speed_mult_max = 2.0
+
+restart = False
+
+
+
 """
 This is the start of my custom class
 """
+
 class Boid(object):
     def __init__(self, x, y):
         self.pos = PVector(x, y)
         self.vel = PVector.fromAngle(random(TWO_PI))
         self.vel.mult(random(1.0, max_speed))
         self.acc = PVector(0, 0)
-    
+        
+        self.temp_max_speed = None
+        
+    def apply_flow(self):
+        toCenter = PVector.sub(flow_center, self.pos)
+        toCenter.mult(flow_strength)
+        self.acc.add(toCenter)
+        
+        
     
     def update(self):
+        
+        ms = self.temp_max_speed if self.temp_max_speed is not None else max_speed
         self.vel.add(self.acc)
-        if self.vel.mag() > max_speed:
-            self.vel.setMag(max_speed)
+        if self.vel.mag() > ms:
+            self.vel.setMag(ms)
         self.pos.add(self.vel)
         self.acc.mult(0)
+        
+        
     
     def apply_force(self, f):
         self.acc.add(f)
@@ -99,6 +135,7 @@ class Boid(object):
             steer.add(sep); steer.add(ali); steer.add(coh)
         self.apply_force(steer)
         
+        
     def rule_cohesion(self, others):
         center = PVector(0,0)
         count = 0
@@ -112,10 +149,13 @@ class Boid(object):
             return self.steer_to(center)
         return PVector(0,0)
 
+
     def wrap_edges(self):
+        if self.pos.y < surfaceY:
+            self.pos.y = surfaceY + surfaceB
+            self.vel.y = abs(self.vel.y) * 0.8
         if self.pos.x < 0: self.pos.x = width
         if self.pos.x > width: self.pos.x = 0
-        if self.pos.y < 0: self.pos.y = height
         if self.pos.y > height: self.pos.y = 0
     
     
@@ -125,8 +165,35 @@ class Boid(object):
         pushStyle()
         translate(self.pos.x, self.pos.y)
         rotate(angle)
+        
+        pushStyle()
+        stroke(0)
+        line(0, 0, 30, 0)
+        popStyle()
+        
+        
         rectMode(CENTER)
         fill(230)
+        stroke(40)
+        rect(0, 0, 16, 6)
+        popStyle()
+        popMatrix()
+        
+    def draw_dolphin(self):
+        angle = self.vel.heading()
+        pushMatrix()
+        pushStyle()
+        translate(self.pos.x, self.pos.y)
+        rotate(angle)
+        
+        pushStyle()
+        stroke(0)
+        line(0, 0, 30, 0)
+        popStyle()
+        
+        
+        rectMode(CENTER)
+        fill(255,0,0)
         stroke(40)
         rect(0, 0, 16, 6)
         popStyle()
@@ -147,20 +214,40 @@ This is the end of my custom class
 def add_boids(n):
     for b in range(n):
         flock.append(Boid(random(width), random(height)))
+        
+        
+def add_dolphin():
+    d = Boid(random(width), random(surfaceY + 80, height - 60))
+    d.vel.setMag(random(1.6, 3.8))
+    dolphins.append(d)
 
 
 def setup():
-    size(1980, 1080)
+    
+    size(displayWidth, displayHeight)
+    
     frameRate(60)
+    
+    global flow_center
+    flow_center = PVector(random(width), random(height))
+
+    
+    global surfaceY
+    surfaceY = height * 0.1
+    
     add_boids(30)
     
+    for d in range(2):
+        add_dolphin()
 
-def clear_trail(a=60):
+    
+
+def clear_trail(a=0):
     pushMatrix()
     pushStyle()
     resetMatrix()
     noStroke()
-    fill(18, 18, 24, a)
+    fill(18, 18, 24)
     rectMode(CORNER)
     rect(0, 0, width, height)
     popStyle()
@@ -169,29 +256,93 @@ def clear_trail(a=60):
     
 
 def draw():
+    global restart
     
+    if restart:
+        restart = False
+        reset_state()
+        
     if not running:
-        clear_trail(10)
+        clear_trail()
         for b in flock:
             b.draw_boid()
         return
     
     clear_trail(0)
-    #first apply all rules to every agent
+
     for b in flock:
         b.apply_rules(flock)
+        
+        # Sardine escape
+        nearestD = None
+        nearestDist = 1e9
+        for d in dolphins:
+            dist = b.pos.dist(d.pos)
+            if dist < nearestDist:
+                nearestDist = dist
+        # escape force
+        if nearestDist < sardine_threat_radius:
+            # find the nearest dolphin again to push directly away
+            for d in dolphins:
+                if b.pos.dist(d.pos) == nearestDist:
+                    away = PVector.sub(b.pos, d.pos)
+                    if away.mag() > 1e-3:
+                        away.normalize()
+                        s = constrain((sardine_threat_radius - nearestDist)/sardine_threat_radius, 0, 1)
+                        away.mult(s * sardine_escape_force)
+                        b.apply_force(away)
+                    break
+            # shock speed boost inverse with distance
+            shock = 1.0 - constrain(nearestDist / sardine_threat_radius, 0, 1)
+            b.temp_max_speed = lerp(max_speed, max_speed * sardine_escape_speed_mult_max, shock)
+        else:
+            b.temp_max_speed = None
+        
+
     #then draw all the agents
     for b in flock: 
+        b.apply_rules(flock)
+        b.apply_flow() 
         b.update()
         b.wrap_edges()
         b.draw_boid()
         b.draw_radius()
+
+        
+    for d in dolphins:
+        
+        d.apply_flow()
+                
+        d.update()
+        d.wrap_edges()
+        
+        d.draw_dolphin()
+
+
+
+def reset_state():
+    global flow_center, surfaceY, flock, dolphins
+    
+    flow_center = PVector(random(width), random(height))
+    
+    surfaceY = height * 0.1
+
+    flock = []
+    dolphins = []
+
+    add_boids(30)
+    for _ in range(2):
+        add_dolphin()
+
 
 
 def keyPressed():
     global show_radius
     global mode, show_info, running
     global view_radius, max_speed, max_force
+    
+    global restart
+    
     if key in ('s', 'S'):
         add_boids(20)
     elif key in ('c', 'C'):
@@ -205,6 +356,12 @@ def keyPressed():
     elif key == '[': view_radius = max(10, view_radius - 5)
     elif key == ']': view_radius = min(200, view_radius + 5)
     elif key == 'a': max_speed = max(0.5, max_speed - 0.2)
-    elif key == 'd': max_speed = min(8.0, max_speed + 0.2)
+    # elif key == 'd': max_speed = min(8.0, max_speed + 0.2)
     elif key == 'f': max_force = max(0.005, max_force - 0.005)
     elif key == 'g': max_force = min(0.5, max_force + 0.005)
+    
+    elif key == 'd':
+        add_dolphin()
+
+    elif key == 'r':
+        restart = True
