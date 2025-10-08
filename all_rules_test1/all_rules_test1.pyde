@@ -25,6 +25,9 @@ sardine_escape_force = 0.55
 sardine_escape_speed_mult_max = 8.0
 
 restart = False
+herd_mode = False
+ring_phase = 0.0
+RING_ROT_SPEED = 0.015
 
 SARDINE_LEN = 18
 SARDINE_W   = 9
@@ -41,9 +44,16 @@ FLANK_GAIN    = 0.45
 DOLPHIN_SEP_R = 60.0
 DOLPHIN_SEP_W = 0.9
 
-HERD_MARGIN = 90.0
+HERD_MARGIN = 110.0
 ORBIT_AHEAD = 0.9
 WEIGHT_REJOIN = 1.2
+
+HERD_WEIGHT_SEP = 0.6
+HERD_WEIGHT_ALI = 2.4
+HERD_WEIGHT_COH = 2.0
+
+RING_RADIAL_GAIN = 1.0
+RING_TANGENT_GAIN = 1.15
 
 WRAP_MARGIN = 24.0
 
@@ -59,15 +69,13 @@ EAT_COOLDOWN_FRAMES = 10
 
 pops = []
 
-WATER_MAX = 2600
+WATER_MAX = 1600
 WATER_MIN_EMIT = 1
-WATER_MAX_EMIT = 3
+WATER_MAX_EMIT = 2
 SARDINE_EMIT_MIN = 0
-SARDINE_EMIT_MAX = 2
+SARDINE_EMIT_MAX = 1
 
 sardines_eaten = 0
-
-
 
 class Pop(object):
     def __init__(self, x, y):
@@ -164,7 +172,7 @@ class Boid(object):
         desired = PVector.sub(target, self.pos)
         if desired.mag() == 0:
             return PVector(0,0)
-        desired.setMag(desired_speed if self.is_dolphin else max_speed)
+        desired.setMag(desired_speed if self.is_dolphin and desired_speed is not None else (DOLPHIN_SPEED if self.is_dolphin else max_speed))
         steer = PVector.sub(desired, self.vel)
         cap = force_cap if force_cap is not None else (DOLPHIN_FORCE if self.is_dolphin else max_force)
         if steer.mag() > cap: steer.setMag(cap)
@@ -230,15 +238,18 @@ class Boid(object):
         ali = self.rule_alignment(others)
         coh = self.rule_cohesion(others)
         rej = self.rule_rejoin()
-        steer = PVector(0,0)
-        if mode == 'sep':
-            sep.mult(weight_sep); steer.add(sep)
-        elif mode == 'ali':
-            ali.mult(weight_ali); steer.add(ali)
-        elif mode == 'coh':
-            coh.mult(weight_coh); steer.add(coh)
+        if herd_mode:
+            sep.mult(HERD_WEIGHT_SEP); ali.mult(HERD_WEIGHT_ALI); coh.mult(HERD_WEIGHT_COH); rej.mult(WEIGHT_REJOIN)
         else:
             sep.mult(weight_sep); ali.mult(weight_ali); coh.mult(weight_coh); rej.mult(WEIGHT_REJOIN)
+        steer = PVector(0,0)
+        if mode == 'sep':
+            steer.add(sep)
+        elif mode == 'ali':
+            steer.add(ali)
+        elif mode == 'coh':
+            steer.add(coh)
+        else:
             steer.add(sep); steer.add(ali); steer.add(coh); steer.add(rej)
         self.apply_force(steer)
     def wrap_edges(self):
@@ -260,18 +271,20 @@ class Boid(object):
         translate(self.pos.x, self.pos.y)
         rotate(ang)
         noStroke()
-        fill(120, 210)
-        for _ in range(int(L*1.8)):
-            u = random(0.0, 1.0)
-            v = random(0.0, 1.0)
-            if u + v > 1.0:
-                u = 1.0 - u
-                v = 1.0 - v
-            x = tip[0] + u*(bL[0]-tip[0]) + v*(bR[0]-tip[0])
-            y = tip[1] + u*(bL[1]-tip[1]) + v*(bR[1]-tip[1])
-            jx = (noise(x*0.05, y*0.05, frameCount*0.03)-0.5)*1.0
-            jy = (noise(x*0.05+9.1, y*0.05+3.7, frameCount*0.03)-0.5)*1.0
-            ellipse(x + jx, y + jy, 1.2, 1.2)
+        if herd_mode:
+            fill(120, 210)
+            triangle(tip[0], tip[1], bL[0], bL[1], bR[0], bR[1])
+        else:
+            fill(120, 210)
+            for _ in range(int(L*1.2)):
+                u = random(0.0, 1.0); v = random(0.0, 1.0)
+                if u + v > 1.0:
+                    u = 1.0 - u; v = 1.0 - v
+                x = tip[0] + u*(bL[0]-tip[0]) + v*(bR[0]-tip[0])
+                y = tip[1] + u*(bL[1]-tip[1]) + v*(bR[1]-tip[1])
+                jx = (noise(x*0.05, y*0.05, frameCount*0.03)-0.5)*1.0
+                jy = (noise(x*0.05+9.1, y*0.05+3.7, frameCount*0.03)-0.5)*1.0
+                ellipse(x + jx, y + jy, 1.2, 1.2)
         popStyle(); popMatrix()
     def draw_dolphin(self):
         ang = self.vel.heading()
@@ -283,18 +296,20 @@ class Boid(object):
         translate(self.pos.x, self.pos.y)
         rotate(ang)
         noStroke()
-        fill(0)
-        for _ in range(int(L*2.6)):
-            u = random(0.0, 1.0)
-            v = random(0.0, 1.0)
-            if u + v > 1.0:
-                u = 1.0 - u
-                v = 1.0 - v
-            x = tip[0] + u*(bL[0]-tip[0]) + v*(bR[0]-tip[0])
-            y = tip[1] + u*(bL[1]-tip[1]) + v*(bR[1]-tip[1])
-            jx = (noise(x*0.04, y*0.04, frameCount*0.025)-0.5)*1.2
-            jy = (noise(x*0.04+5.3, y*0.04+8.2, frameCount*0.025)-0.5)*1.2
-            ellipse(x + jx, y + jy, 1.6, 1.6)
+        if herd_mode:
+            fill(0)
+            triangle(tip[0], tip[1], bL[0], bL[1], bR[0], bR[1])
+        else:
+            fill(0)
+            for _ in range(int(L*2.0)):
+                u = random(0.0, 1.0); v = random(0.0, 1.0)
+                if u + v > 1.0:
+                    u = 1.0 - u; v = 1.0 - v
+                x = tip[0] + u*(bL[0]-tip[0]) + v*(bR[0]-tip[0])
+                y = tip[1] + u*(bL[1]-tip[1]) + v*(bR[1]-tip[1])
+                jx = (noise(x*0.04, y*0.04, frameCount*0.025)-0.5)*1.2
+                jy = (noise(x*0.04+5.3, y*0.04+8.2, frameCount*0.025)-0.5)*1.2
+                ellipse(x + jx, y + jy, 1.6, 1.6)
         popStyle(); popMatrix()
     def draw_radius(self):
         return
@@ -335,10 +350,8 @@ def add_dolphin():
 def setup():
     size(1400, 800)
     frameRate(60)
-    
-    hudFont = createFont("Courier", 14);
-    textFont(hudFont);
-  
+    hudFont = createFont("Courier", 14)
+    textFont(hudFont)
     global flow_center
     flow_center = PVector(width*0.5, height*0.55)
     global surfaceY
@@ -454,6 +467,8 @@ def handle_predation():
             del flock[idx]
 
 def emit_water_for_dolphin(d):
+    if herd_mode: 
+        return
     spd = d.vel.mag()
     if spd < 0.1:
         return
@@ -474,6 +489,8 @@ def emit_water_for_dolphin(d):
         del water[:len(water)-WATER_MAX]
 
 def emit_water_for_sardine(s):
+    if herd_mode:
+        return
     spd = s.vel.mag()
     if spd < 0.6:
         return
@@ -496,18 +513,20 @@ def emit_water_for_sardine(s):
 def draw_hud():
     pushStyle()
     fill(0)
-    textAlign(RIGHT, TOP)
+    textAlign(LEFT, TOP)
     textSize(14)
+    text("Mode: HERD" if herd_mode else "Mode: CHASE", 12, 10)
+    textAlign(RIGHT, TOP)
     hdr = "# Dolphins: %d    Sardines eaten: %d" % (len(dolphins), sardines_eaten)
     text(hdr, width - 12, 10)
     textAlign(LEFT, BOTTOM)
     textSize(13)
-    instructions = "D: spawn a dolphin    S: spawn sardines    R: restart"
+    instructions = "T: toggle herd   D: spawn a dolphin   S: spawn sardines   R: restart"
     text(instructions, 12, height - 10)
     popStyle()
 
 def draw():
-    global restart
+    global restart, ring_phase
     if restart:
         restart = False
         reset_state()
@@ -525,7 +544,9 @@ def draw():
             if wp.done(): water.remove(wp)
         draw_hud()
         return
+
     clear_trail()
+
     for b in flock:
         b.apply_rules(flock)
         nearestDist = 1e9
@@ -557,62 +578,93 @@ def draw():
                 b.temp_max_speed = None
         else:
             b.temp_max_speed = None
+
     for b in flock:
         b.update()
         b.wrap_edges()
         emit_water_for_sardine(b)
-    resolve_sardine_collisions()
+
+    if (frameCount % (3 if herd_mode else 2)) == 0:
+        resolve_sardine_collisions()
+
     center, base_r = flock_center_and_radius()
-    for d in dolphins:
-        target = None
-        minD = DOLPHIN_VIEW
-        for s in flock:
-            ds = d.pos.dist(s.pos)
-            if ds < minD:
-                minD = ds
-                target = s
-        if target is not None:
-            lead_t = min(LEAD_TIME_MAX, minD / max(1.0, DOLPHIN_SPEED + 0.001))
-            future = PVector(target.pos.x + target.vel.x * lead_t,
-                             target.pos.y + target.vel.y * lead_t)
-            seek = d.steer_to(future, desired_speed=DOLPHIN_SPEED, force_cap=DOLPHIN_FORCE)
-            toT = PVector.sub(future, d.pos)
-            if toT.mag() > 0:
-                toT.normalize()
-                tangent = PVector(-toT.y, toT.x)
-                tangent.mult(FLANK_GAIN * (1.0 + 0.25 * sin(d.phase)) * (1 if hasattr(d,'orbit_dir') and d.orbit_dir==1 else -1))
-                flank = PVector.add(PVector.mult(toT, 0.6), tangent)
-                flank.setMag(DOLPHIN_FORCE * 0.9)
-                seek.add(flank)
+
+    if herd_mode and len(dolphins) > 0:
+        ring_phase += RING_ROT_SPEED
+        desired_r = base_r + HERD_MARGIN
+        n = len(dolphins)
+        for i, d in enumerate(dolphins):
+            ang = ring_phase + TWO_PI * i / float(max(1, n))
+            target = PVector(center.x + cos(ang) * desired_r,
+                             center.y + sin(ang) * desired_r)
+            radial = PVector.sub(target, d.pos)
+            if radial.mag() > 0:
+                radial.normalize()
+            tangent = PVector(-radial.y, radial.x)
+            seek = PVector(0,0)
+            seek.add(PVector.mult(radial, DOLPHIN_FORCE * RING_RADIAL_GAIN))
+            seek.add(PVector.mult(tangent, DOLPHIN_FORCE * RING_TANGENT_GAIN * (1.0 + 0.25*sin(d.phase))))
             seek.add(dolphin_separation_force(d))
             d.apply_force(seek)
-        else:
-            desired_r = base_r + HERD_MARGIN + 20.0 * sin(d.phase*0.7)
-            v = PVector.sub(d.pos, center)
-            if v.mag() < 1e-3:
-                v = PVector(random(-1,1), random(-1,1))
-            ang = atan2(v.y, v.x)
-            target_ang = ang + (d.orbit_dir if hasattr(d, 'orbit_dir') else 1) * (ORBIT_AHEAD + 0.25*sin(d.phase))
-            tx = center.x + cos(target_ang) * desired_r
-            ty = center.y + sin(target_ang) * desired_r
-            seek = d.steer_to(PVector(tx, ty), desired_speed=DOLPHIN_SPEED, force_cap=DOLPHIN_FORCE)
-            seek.add(dolphin_separation_force(d))
-            d.apply_force(seek)
-        d.temp_max_speed = DOLPHIN_SPEED
-        d.update()
-        d.wrap_edges()
-        emit_water_for_dolphin(d)
-    if frameCount % SPAWN_SARDINE_EVERY_FRAMES == 0 and len(flock) < MAX_SARDINES:
+            d.temp_max_speed = DOLPHIN_SPEED
+            d.update()
+            d.wrap_edges()
+            emit_water_for_dolphin(d)
+    else:
+        for d in dolphins:
+            target = None
+            minD = DOLPHIN_VIEW
+            for s in flock:
+                ds = d.pos.dist(s.pos)
+                if ds < minD:
+                    minD = ds
+                    target = s
+            if target is not None:
+                lead_t = min(LEAD_TIME_MAX, minD / max(1.0, DOLPHIN_SPEED + 0.001))
+                future = PVector(target.pos.x + target.vel.x * lead_t,
+                                 target.pos.y + target.vel.y * lead_t)
+                seek = d.steer_to(future, desired_speed=DOLPHIN_SPEED, force_cap=DOLPHIN_FORCE)
+                toT = PVector.sub(future, d.pos)
+                if toT.mag() > 0:
+                    toT.normalize()
+                    tangent = PVector(-toT.y, toT.x)
+                    tangent.mult(FLANK_GAIN * (1.0 + 0.25 * sin(d.phase)) * (1 if hasattr(d,'orbit_dir') and d.orbit_dir==1 else -1))
+                    flank = PVector.add(PVector.mult(toT, 0.6), tangent)
+                    flank.setMag(DOLPHIN_FORCE * 0.9)
+                    seek.add(flank)
+                seek.add(dolphin_separation_force(d))
+                d.apply_force(seek)
+            else:
+                desired_r = base_r + HERD_MARGIN + 20.0 * sin(d.phase*0.7)
+                v = PVector.sub(d.pos, center)
+                if v.mag() < 1e-3:
+                    v = PVector(random(-1,1), random(-1,1))
+                ang = atan2(v.y, v.x)
+                target_ang = ang + (d.orbit_dir if hasattr(d, 'orbit_dir') else 1) * (ORBIT_AHEAD + 0.25*sin(d.phase))
+                tx = center.x + cos(target_ang) * desired_r
+                ty = center.y + sin(target_ang) * desired_r
+                seek = d.steer_to(PVector(tx, ty), desired_speed=DOLPHIN_SPEED, force_cap=DOLPHIN_FORCE)
+                seek.add(dolphin_separation_force(d))
+                d.apply_force(seek)
+            d.temp_max_speed = DOLPHIN_SPEED
+            d.update()
+            d.wrap_edges()
+            emit_water_for_dolphin(d)
+
+    if (not herd_mode) and frameCount % SPAWN_SARDINE_EVERY_FRAMES == 0 and len(flock) < MAX_SARDINES:
         for _ in range(int(random(2, 6))):
             spawn_from_edge(1.6, 3.0, as_dolphin=False)
-    if frameCount % SPAWN_DOLPHIN_EVERY_FRAMES == 0 and len(dolphins) < MAX_DOLPHINS:
+    if (not herd_mode) and frameCount % SPAWN_DOLPHIN_EVERY_FRAMES == 0 and len(dolphins) < MAX_DOLPHINS:
         add_dolphin()
+
     handle_predation()
+
     for wp in list(water):
         wp.update()
         wp.draw()
         if wp.done():
             water.remove(wp)
+
     for b in flock:
         b.draw_boid()
     for d in dolphins:
@@ -622,15 +674,17 @@ def draw():
         p.draw()
         if p.done():
             pops.remove(p)
+
     draw_hud()
 
 def reset_state():
-    global flow_center, surfaceY, flock, dolphins, sardines_eaten
+    global flow_center, surfaceY, flock, dolphins, sardines_eaten, ring_phase
     flow_center = PVector(random(width), random(height))
     surfaceY = height * 0.12
     flock = []
     dolphins = []
     sardines_eaten = 0
+    ring_phase = 0.0
     add_boids(30)
     for _ in range(2):
         add_dolphin()
@@ -639,23 +693,38 @@ def keyPressed():
     global show_radius
     global mode, show_info, running
     global view_radius, max_speed, max_force
-    global restart
+    global restart, herd_mode
     if key in ('s', 'S'):
-        add_boids(10)
+        if not herd_mode:
+            add_boids(10)
     elif key in ('c', 'C'):
         flock[:] = []
-    elif key in ('v','V'): show_radius = not show_radius
-    elif key == '1': mode = 'sep'
-    elif key == '2': mode = 'ali'
-    elif key == '3': mode = 'coh'
-    elif key == '4': mode = 'all'
-    elif key == ' ': running = not running
-    elif key == '[': view_radius = max(10, view_radius - 5)
-    elif key == ']': view_radius = min(260, view_radius + 5)
-    elif key == 'a': max_speed = max(0.5, max_speed - 0.2)
-    elif key == 'f': max_force = max(0.005, max_force - 0.005)
-    elif key == 'g': max_force = min(0.5, max_force + 0.005)
+    elif key in ('v','V'):
+        show_radius = not show_radius
+    elif key == '1':
+        mode = 'sep'
+    elif key == '2':
+        mode = 'ali'
+    elif key == '3':
+        mode = 'coh'
+    elif key == '4':
+        mode = 'all'
+    elif key == ' ':
+        running = not running
+    elif key == '[':
+        view_radius = max(10, view_radius - 5)
+    elif key == ']':
+        view_radius = min(260, view_radius + 5)
+    elif key == 'a':
+        max_speed = max(0.5, max_speed - 0.2)
+    elif key == 'f':
+        max_force = max(0.005, max_force - 0.005)
+    elif key == 'g':
+        max_force = min(0.5, max_force + 0.005)
+    elif key in ('t', 'T'):
+        herd_mode = not herd_mode
     elif key == 'd':
-        add_dolphin()
+        if not herd_mode:
+            add_dolphin()
     elif key == 'r':
         restart = True
