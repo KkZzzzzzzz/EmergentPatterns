@@ -52,8 +52,12 @@ HERD_WEIGHT_SEP = 0.6
 HERD_WEIGHT_ALI = 2.4
 HERD_WEIGHT_COH = 2.0
 
-RING_RADIAL_GAIN = 1.0
-RING_TANGENT_GAIN = 1.15
+RING_RADIAL_GAIN  = 1.35
+RING_TANGENT_GAIN = 0.9
+LEAK_GAIN         = 1.35
+ESCAPE_THRESH_F   = 1.15
+ESCAPE_K          = 2
+INTERCEPT_GAIN    = 1.0
 
 WRAP_MARGIN = 24.0
 
@@ -467,7 +471,7 @@ def handle_predation():
             del flock[idx]
 
 def emit_water_for_dolphin(d):
-    if herd_mode: 
+    if herd_mode:
         return
     spd = d.vel.mag()
     if spd < 0.1:
@@ -592,20 +596,86 @@ def draw():
     if herd_mode and len(dolphins) > 0:
         ring_phase += RING_ROT_SPEED
         desired_r = base_r + HERD_MARGIN
-        n = len(dolphins)
+
+        leak_idx = -1
+        dmax = -1
+        for i, s in enumerate(flock):
+            ds = s.pos.dist(center)
+            if ds > dmax:
+                dmax = ds
+                leak_idx = i
+        leak_dir = None
+        leak_point = None
+        if leak_idx >= 0 and dmax > desired_r * 0.93:
+            leak_dir = PVector.sub(flock[leak_idx].pos, center)
+            if leak_dir.mag() > 0:
+                leak_dir.normalize()
+                leak_point = PVector(center.x + leak_dir.x * desired_r, center.y + leak_dir.y * desired_r)
+
+        esc_list = []
+        esc_thresh = desired_r * ESCAPE_THRESH_F
+        for i, s in enumerate(flock):
+            if s.pos.dist(center) > esc_thresh:
+                esc_list.append((s.pos.dist(center), i))
+        esc_list.sort(reverse=True)
+        esc_list = esc_list[:ESCAPE_K]
+        assigned = set()
+
         for i, d in enumerate(dolphins):
-            ang = ring_phase + TWO_PI * i / float(max(1, n))
-            target = PVector(center.x + cos(ang) * desired_r,
-                             center.y + sin(ang) * desired_r)
-            radial = PVector.sub(target, d.pos)
-            if radial.mag() > 0:
-                radial.normalize()
-            tangent = PVector(-radial.y, radial.x)
-            seek = PVector(0,0)
-            seek.add(PVector.mult(radial, DOLPHIN_FORCE * RING_RADIAL_GAIN))
-            seek.add(PVector.mult(tangent, DOLPHIN_FORCE * RING_TANGENT_GAIN * (1.0 + 0.25*sin(d.phase))))
-            seek.add(dolphin_separation_force(d))
-            d.apply_force(seek)
+            take_intercept = False
+            if esc_list:
+                best_e = None
+                best_dist = 1e9
+                for _, ei in esc_list:
+                    if ei in assigned: continue
+                    ds = d.pos.dist(flock[ei].pos)
+                    if ds < best_dist:
+                        best_dist = ds
+                        best_e = ei
+                if best_e is not None:
+                    target = flock[best_e]
+                    lead_t = min(LEAD_TIME_MAX, best_dist / max(1.0, DOLPHIN_SPEED + 0.001))
+                    future = PVector(target.pos.x + target.vel.x * lead_t,
+                                     target.pos.y + target.vel.y * lead_t)
+                    seek = d.steer_to(future, desired_speed=DOLPHIN_SPEED, force_cap=DOLPHIN_FORCE*INTERCEPT_GAIN)
+                    seek.add(dolphin_separation_force(d))
+                    d.apply_force(seek)
+                    assigned.add(best_e)
+                    take_intercept = True
+
+            if take_intercept:
+                pass
+            else:
+                ang = ring_phase + TWO_PI * i / float(max(1, len(dolphins)))
+                tx = center.x + cos(ang) * desired_r
+                ty = center.y + sin(ang) * desired_r
+                target = PVector(tx, ty)
+                if leak_point is not None:
+                    v_d = PVector.sub(d.pos, center)
+                    v_t = PVector.sub(leak_point, center)
+                    if v_d.mag() > 0 and v_t.mag() > 0:
+                        v_d.normalize(); v_t.normalize()
+                        cosang = v_d.dot(v_t)
+                        gain = max(0.0, cosang)
+                        target.x = lerp(target.x, leak_point.x, gain * 0.55)
+                        target.y = lerp(target.y, leak_point.y, gain * 0.55)
+
+                radial = PVector.sub(target, d.pos)
+                if radial.mag() > 0:
+                    radial.normalize()
+                tangent = PVector(-radial.y, radial.x)
+
+                seek = PVector(0,0)
+                seek.add(PVector.mult(radial, DOLPHIN_FORCE * RING_RADIAL_GAIN))
+                seek.add(PVector.mult(tangent, DOLPHIN_FORCE * RING_TANGENT_GAIN * (1.0 + 0.25*sin(d.phase))))
+                if leak_point is not None:
+                    to_leak = PVector.sub(leak_point, d.pos)
+                    if to_leak.mag() > 0:
+                        to_leak.normalize()
+                        seek.add(PVector.mult(to_leak, DOLPHIN_FORCE * LEAK_GAIN))
+                seek.add(dolphin_separation_force(d))
+                d.apply_force(seek)
+
             d.temp_max_speed = DOLPHIN_SPEED
             d.update()
             d.wrap_edges()
